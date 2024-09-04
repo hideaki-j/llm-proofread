@@ -22,3 +22,7 @@ Alternatively, you can set the API key directly from the web UI.
 ### Step 2: Open the web UI
 
 Simply double-click the `index.html` file to open the LLM Proofreader in your default web browser.
+
+## Notes
+- Pairwise comparison is performed for each line; provide the input text with new lines (`\n`).
+- To make sure generated text also has new lines, you can write `keep new lines as is` in the additional notes.
