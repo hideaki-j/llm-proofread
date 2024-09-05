@@ -422,6 +422,7 @@
     </div>
 
     <button onclick="compareDiff()" id="proofreadBtn">Proofread</button>
+    <button onclick="insertNewLines()" id="insertNewLinesBtn">Insert new lines</button>
     <button onclick="startPairwiseComparison()" id="pairwiseCompareBtn">Pairwise Comparison</button>
 
     <!-- Third row: Original Diff and Rewritten Diff (unchanged) -->
@@ -680,6 +681,14 @@
                 // Set max-height to a large value to accommodate the content
                 optionsContainer.style.maxHeight = optionsContainer.scrollHeight + 'px';
             }
+        }
+
+        function insertNewLines() {
+            const originalText = document.getElementById('text1').value;
+            const sentences = originalText.match(/[^.!?]+[.!?]+/g) || [];
+            let newText = sentences.map(sentence => sentence.trim()).join('\n\n');
+            newText = newText.replace(/\n{3,}/g, '\n\n'); // remove more than 2 newlines
+            document.getElementById('text1').value = newText;
         }
     </script>
 </body>
