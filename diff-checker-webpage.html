@@ -265,10 +265,11 @@
             border-radius: 4px;
             padding: 10px;
             white-space: pre-wrap;
-            height: 150px;
+            height: 300px; /* Increased height */
             overflow-y: auto;
             font-size: 14px;
             margin-bottom: 10px;
+            line-height: 1.5;
         }
         .diff-highlight {
             background-color: #fff2cc;
@@ -421,8 +422,7 @@
         </div>
     </div>
 
-    <button onclick="compareDiff()" id="proofreadBtn">Proofread</button>
-    <button onclick="insertNewLines()" id="insertNewLinesBtn">Insert new lines</button>
+    <button onclick="callGPTandCompareDiff()" id="proofreadBtn">Proofread</button>
     <button onclick="startPairwiseComparison()" id="pairwiseCompareBtn">Pairwise Comparison</button>
 
     <!-- Third row: Original Diff and Rewritten Diff (unchanged) -->
@@ -475,6 +475,226 @@
     </div>
 
     <script>
+        // Add this at the beginning of the script section
+        const dmp = new diff_match_patch();
+
+        let originalPairwise = '';
+        let rewrittenPairwise = '';
+        let currentDiffInfo = [];
+        let currentPairIndex = 0;
+        let originalPairCount = 0; // Add this new variable
+        let pairwiseProgress = 1; // Add this new variable
+
+        function splitSentence(sentence) {
+            return sentence.match(/\b[\w']+\b|\s+|[^\w\s]+/g) || [];
+        }
+
+        // Add this new wrapper function near the top of the script section
+        function performDiff(text1, text2, isWordLevel = true) {
+            if (!isWordLevel) {
+                const diffs = dmp.diff_main(text1, text2);
+                dmp.diff_cleanupSemantic(diffs);
+                return diffs;
+            } else {
+                // Implement word-level diff
+                const wordArray = [];
+                const wordHash = {};
+                wordArray[0] = '';
+
+                // This function maps words to characters
+                function diffWordsToCharsMunge_(text) {
+                    let chars = '';
+                    const words = splitSentence(text);
+                    for (let i = 0; i < words.length; i++) {
+                        const word = words[i];
+                        if (wordHash.hasOwnProperty(word)) {
+                            chars += String.fromCharCode(wordHash[word]);
+                            console.log('word', word, 'is already in wordHash', wordHash[word]);
+                        } else {
+                            chars += String.fromCharCode(wordArray.length);
+                            wordHash[word] = wordArray.length;
+                            wordArray.push(word);
+                            console.log('word', word, 'is added to wordHash', wordHash[word], 'with the index', wordArray.length);
+                        }
+                    }
+                    return chars;
+                }
+
+                // Convert characters back to words
+                function diff_charsToWords_(diffs) {
+                    for (let i = 0; i < diffs.length; i++) {
+                        const chars = diffs[i][1];
+                        const text = [];
+                        for (let j = 0; j < chars.length; j++) {
+                            text.push(wordArray[chars.charCodeAt(j)]);
+                        }
+                        diffs[i][1] = text.join('');
+                    }
+                }
+                
+                // Convert text to characters
+                const chars1 = diffWordsToCharsMunge_(text1);
+                const chars2 = diffWordsToCharsMunge_(text2);
+                console.log('chars1', chars1);
+                console.log('chars2', chars2);
+
+                const diffs = dmp.diff_main(chars1, chars2, false);
+                dmp.diff_cleanupSemantic(diffs);
+
+                // Convert characters back to words
+                diff_charsToWords_(diffs);
+
+                console.log(diffs);
+                return diffs;
+            }
+        }
+
+        function initializePairwiseComparison() {
+            originalPairwise = document.getElementById('text1').value;
+            rewrittenPairwise = document.getElementById('additions').innerText;
+            const diffs = performDiff(originalPairwise, rewrittenPairwise);
+            currentDiffInfo = getDiffInfo(diffs);
+            currentDiffInfo.forEach(diff => {
+                diff.resolved = false;
+                diff.choice = null;
+            });
+            currentPairIndex = 0;
+            originalPairCount = currentDiffInfo.length; // Set the original pair count
+            showPairwiseComparison(currentDiffInfo[currentPairIndex], currentPairIndex);
+        }
+
+        function selectPairwiseOption(choice) {
+            
+            pairwiseProgress++;
+
+            const currentPair = currentDiffInfo[currentPairIndex];
+            currentPair.resolved = true;
+            currentPair.choice = choice;
+
+            if (choice === 'original') {
+                // Update rewrittenPairwise to match the original for this diff
+                rewrittenPairwise = rewrittenPairwise.substring(0, currentPair.rewrittenSpanStart) + 
+                                    currentPair.originalDiffString + 
+                                    rewrittenPairwise.substring(currentPair.rewrittenSpanEnd);
+            } else {
+                // Update originalPairwise to match the rewritten for this diff
+                originalPairwise = originalPairwise.substring(0, currentPair.originalSpanStart) + 
+                                   currentPair.rewrittenDiffString + 
+                                   originalPairwise.substring(currentPair.originalSpanEnd);
+            }
+
+            // Recalculate diffInfo
+            updateDiffInfo();
+
+            // Check if there are any unresolved diffs left
+            const unresolvedDiff = currentDiffInfo.find(diff => !diff.resolved);
+            if (unresolvedDiff) {
+                currentPairIndex = currentDiffInfo.indexOf(unresolvedDiff);
+                showPairwiseComparison(unresolvedDiff, currentPairIndex);
+            } else {
+                finalizePairwiseComparison();
+            }
+
+        }
+
+        function updateDiffInfo() {
+            const newDiffs = performDiff(originalPairwise, rewrittenPairwise);
+            currentDiffInfo = getDiffInfo(newDiffs);
+
+            // Mark all previously resolved diffs
+            let originalIndex = 0;
+            let rewrittenIndex = 0;
+            for (let diff of currentDiffInfo) {
+                if (originalPairwise.substring(diff.originalSpanStart, diff.originalSpanEnd) === 
+                    rewrittenPairwise.substring(diff.rewrittenSpanStart, diff.rewrittenSpanEnd)) {
+                    diff.resolved = true;
+                } else {
+                    diff.resolved = false;
+                }
+                originalIndex = diff.originalSpanEnd;
+                rewrittenIndex = diff.rewrittenSpanEnd;
+            }
+        }
+
+        function showPairwiseComparison(diffPair, index) {
+            if (!diffPair) {
+                finalizePairwiseComparison();
+                return;
+            }
+
+            const originalHighlighted = highlightDiffInFullText(originalPairwise, diffPair.originalSpanStart, diffPair.originalSpanEnd, 'removed');
+            const rewrittenHighlighted = highlightDiffInFullText(rewrittenPairwise, diffPair.rewrittenSpanStart, diffPair.rewrittenSpanEnd, 'added');
+
+            document.getElementById('originalComparisonBox').innerHTML = originalHighlighted;
+            document.getElementById('rewrittenComparisonBox').innerHTML = rewrittenHighlighted;
+
+            document.getElementById('comparisonProgress').textContent = `Pair ${pairwiseProgress} of ${originalPairCount}`; // Use pairwiseProgress instead of index + 1
+            document.getElementById('pairwisePopup').style.display = 'block';
+
+            // Scroll to the highlighted diff
+            scrollToHighlight('originalComparisonBox');
+            scrollToHighlight('rewrittenComparisonBox');
+        }
+
+        function highlightDiffInFullText(text, start, end, className) {
+            const before = text.substring(0, start);
+            const diff = text.substring(start, end);
+            const after = text.substring(end);
+            return `${escapeHtml(before)}<span class="${className}">${escapeHtml(diff)}</span>${escapeHtml(after)}`;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function scrollToHighlight(elementId) {
+            const element = document.getElementById(elementId);
+            const highlight = element.querySelector('.removed, .added');
+            if (highlight) {
+                highlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+
+        function finalizePairwiseComparison() {
+            document.getElementById('pairwisePopup').style.display = 'none';
+            
+            // Prepare the final text
+            const finalText = originalPairwise;
+            
+            // Show the result popup
+            document.getElementById('resultContainer').value = finalText;
+            document.getElementById('resultPopup').style.display = 'block';
+        }
+
+        function copyResult() {
+            const resultText = document.getElementById('resultContainer').value;
+            navigator.clipboard.writeText(resultText).then(() => {
+                alert('Result copied to clipboard!');
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        }
+
+        function replaceOriginal() {
+            const resultText = document.getElementById('resultContainer').value;
+            document.getElementById('text1').value = resultText;
+            closeResultPopup();
+            const rewrittenText = document.getElementById('additions').innerText;
+            updateDiffView(resultText, rewrittenText);
+        }
+
+        function closeResultPopup() {
+            document.getElementById('resultPopup').style.display = 'none';
+            // Reset pairwise comparison state
+            originalPairwise = '';
+            rewrittenPairwise = '';
+            currentDiffInfo = [];
+            currentPairIndex = 0;
+            pairwiseProgress = 1; // Reset pairwiseProgress
+        }
+
         function toggleSameWordStart() {
             const checkbox = document.getElementById('sameWordStartCheck');
             const input = document.getElementById('sameWordStart');
@@ -555,17 +775,51 @@
             btn.classList.add('active');
         }
 
-        async function compareDiff() {
-            const text1 = document.getElementById('text1').value;
-            const context = document.getElementById('context').value;
+        function getDiffInfo(diffs) {
+            let diffInfo = [];
+            let originalIndex = 0;
+            let rewrittenIndex = 0;
 
-            // Call ChatGPT API to get rewritten text
-            const rewrittenText = await callChatGPT(text1, context);
+            for (let i = 0; i < diffs.length; i++) {
+                const [type, text] = diffs[i];
+                // type: -1: removed, 0: unchanged, 1: added
+                
+                if (type === -1 || type === 1) {
+                    let info = {
+                        originalSpanStart: originalIndex,
+                        originalSpanEnd: originalIndex + (type === -1 ? text.length : 0),
+                        rewrittenSpanStart: rewrittenIndex,
+                        rewrittenSpanEnd: rewrittenIndex + (type === 1 ? text.length : 0),
+                        originalDiffString: type === -1 ? text : '',
+                        rewrittenDiffString: type === 1 ? text : ''
+                    };
 
-            const dmp = new diff_match_patch();
-            const diffs = dmp.diff_main(text1, rewrittenText);
-            dmp.diff_cleanupSemantic(diffs);
+                    // Check if the next diff is the opposite type (forming a pair)
+                    if (i + 1 < diffs.length && diffs[i + 1][0] === -type) {
+                        const [nextType, nextText] = diffs[i + 1];
+                        if (type === -1) {
+                            info.rewrittenSpanEnd = rewrittenIndex + nextText.length;
+                            info.rewrittenDiffString = nextText;
+                        } else {
+                            info.originalSpanEnd = originalIndex + nextText.length;
+                            info.originalDiffString = nextText;
+                        }
+                        i++; // Skip the next diff since we've processed it
+                    }
 
+                    diffInfo.push(info);
+                }
+
+                if (type === -1 || type === 0) originalIndex += text.length;
+                if (type === 1 || type === 0) rewrittenIndex += text.length;
+            }
+
+            return diffInfo;
+        }
+
+        function updateDiffView(originalText, rewrittenText) {
+            console.log('updateDiffView', originalText, rewrittenText); 
+            const diffs = performDiff(originalText, rewrittenText);
             let removalsHtml = '';
             let additionsHtml = '';
 
@@ -589,13 +843,22 @@
             document.getElementById('additions').innerHTML = additionsHtml || 'No changes';
 
             // Calculate and display word counts
-            const removalsWordCount = getWordCount(text1);
+            const removalsWordCount = getWordCount(originalText);
             const additionsWordCount = getWordCount(rewrittenText);
             document.getElementById('removalsWordCount').textContent = `Word count: ${removalsWordCount}`;
             document.getElementById('additionsWordCount').textContent = `Word count: ${additionsWordCount}`;
 
             // Enable the Pairwise Comparison button
             enablePairwiseCompareBtn();
+        }
+
+        async function callGPTandCompareDiff() {
+            const text1 = document.getElementById('text1').value;
+            const context = document.getElementById('context').value;
+
+            // Call ChatGPT API to get rewritten text
+            const rewrittenText = await callChatGPT(text1, context);
+            updateDiffView(text1, rewrittenText);
         }
 
         function copyAdditions() {
@@ -642,25 +905,6 @@
             }
         });
 
-        function copyResult() {
-            const resultText = document.getElementById('resultContainer').value;
-            navigator.clipboard.writeText(resultText).then(() => {
-                alert('Result copied to clipboard!');
-            }).catch(err => {
-                console.error('Failed to copy text: ', err);
-            });
-        }
-
-        function replaceOriginal() {
-            const resultText = document.getElementById('resultContainer').value;
-            document.getElementById('text1').value = resultText;
-            closeResultPopup();
-        }
-
-        function closeResultPopup() {
-            document.getElementById('resultPopup').style.display = 'none';
-        }
-
         // Add this new function
         function toggleOptions() {
             const optionsContainer = document.getElementById('optionsContainer');
@@ -683,12 +927,15 @@
             }
         }
 
-        function insertNewLines() {
-            const originalText = document.getElementById('text1').value;
-            const sentences = originalText.match(/[^.!?]+[.!?]+/g) || [];
-            let newText = sentences.map(sentence => sentence.trim()).join('\n\n');
-            newText = newText.replace(/\n{3,}/g, '\n\n'); // remove more than 2 newlines
-            document.getElementById('text1').value = newText;
+        // Update the existing startPairwiseComparison function
+        function startPairwiseComparison() {
+            pairwiseProgress = 1; // Reset pairwiseProgress
+            initializePairwiseComparison();
+        }
+
+        // Update the existing selectLine function
+        function selectLine(choice) {
+            selectPairwiseOption(choice);
         }
     </script>
 </body>
