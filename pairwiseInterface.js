@@ -3,10 +3,6 @@ let rewrittenLines = [];
 let currentLineIndex = 0;
 let selectedLines = [];
 
-function splitIntoLines(text) {
-    return text.split(/\r?\n/).filter(line => line.trim() !== '');
-}
-
 function showComparisonPopup() {
     const popup = document.getElementById('pairwisePopup');
     const originalBox = document.getElementById('originalComparisonBox');

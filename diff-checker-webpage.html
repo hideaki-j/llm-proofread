@@ -7,6 +7,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
     <script src="openai-api-key.js"></script>
     <script src="pairwiseInterface.js"></script>
+    <script src="textManuplation.js"></script>
     <script src="prompt.js"></script>
     <style>
         /* Add this at the beginning of the style section */
@@ -382,7 +383,7 @@
             margin: 15% auto;
             padding: 20px;
             border: 1px solid #888;
-            width: 300px;
+            width: 400px;
             border-radius: 8px;
             position: relative;
         }
@@ -391,9 +392,31 @@
             margin-top: 0;
         }
 
-        #spaceOnlyPopup .popup-content button {
+        #spaceOnlyCountdown {
+            font-size: 24px;
+            font-weight: bold;
+            text-align: center;
+            margin: 10px 0;
+        }
+
+        #spaceOnlyProgressBar {
             width: 100%;
+            height: 5px;
+            background-color: #e0e0e0;
             margin-bottom: 10px;
+        }
+
+        #spaceOnlyProgressBar::before {
+            content: '';
+            display: block;
+            height: 100%;
+            background-color: #1a73e8;
+            width: 0;
+            transition: width 3s linear;
+        }
+
+        #spaceOnlyPopup.active #spaceOnlyProgressBar::before {
+            width: 100%;
         }
 
         #spaceOnlyPopup .popup-content .close-btn {
@@ -521,9 +544,10 @@
     <div id="spaceOnlyPopup" class="popup">
         <div class="popup-content">
             <h2>Space-only Difference Detected</h2>
-            <p>There's only a difference in spacing or line breaks. Would you like to keep the original spacing?</p>
-            <button onclick="selectSpaceOnlyOption('original')">Yes, keep original</button>
-            <button onclick="selectSpaceOnlyOption('rewritten')">No, use rewritten</button>
+            <p>There's a difference in spacing or line breaks. The system will automatically use original spacing in:</p>
+            <div id="spaceOnlyCountdown">3</div>
+            <div id="spaceOnlyProgressBar"></div>
+            <button onclick="cancelSpaceOnlySelection()">Cancel</button>
         </div>
     </div>
 
@@ -664,22 +688,51 @@
             }
         }
 
+        let spaceOnlyTimer;
+        let countdownInterval;
+
         function spaceOnlyDiffCatcher(diffPair) {
-            // Check if both originalDiffString and rewrittenDiffString contain only whitespace and/or newline characters
-            // If so, show popup asking select original (yes or no)
             if (/^[\s\n]*$/.test(diffPair.originalDiffString) && /^[\s\n]*$/.test(diffPair.rewrittenDiffString)) {
-                document.getElementById('spaceOnlyPopup').style.display = 'block';
+                const popup = document.getElementById('spaceOnlyPopup');
+                const countdownElement = document.getElementById('spaceOnlyCountdown');
+                popup.style.display = 'block';
+                
                 // Disable the main pairwise popup buttons
                 document.querySelectorAll('#comparisonButtons button').forEach(btn => btn.disabled = true);
+                
+                let countdown = 3;
+                countdownElement.textContent = countdown;
+
+                countdownInterval = setInterval(() => {
+                    countdown--;
+                    countdownElement.textContent = countdown;
+                    if (countdown <= 0) {
+                        clearInterval(countdownInterval);
+                    }
+                }, 1000);
+
+                popup.classList.add('active');
+                
+                // Start the 3-second timer
+                spaceOnlyTimer = setTimeout(() => {
+                    selectSpaceOnlyOption('original');
+                }, 3000);
             }
         }
 
-        function selectSpaceOnlyOption(choice) {
-            document.getElementById('spaceOnlyPopup').style.display = 'none';
+        function cancelSpaceOnlySelection() {
+            clearTimeout(spaceOnlyTimer);
+            clearInterval(countdownInterval);
+            const popup = document.getElementById('spaceOnlyPopup');
+            popup.style.display = 'none';
+            popup.classList.remove('active');
+            
             // Re-enable the main pairwise popup buttons
             document.querySelectorAll('#comparisonButtons button').forEach(btn => btn.disabled = false);
-            
-            // Handle the user's choice
+        }
+
+        function selectSpaceOnlyOption(choice) {
+            cancelSpaceOnlySelection();
             selectPairwiseOption(choice);
         }
 
@@ -925,9 +978,12 @@
             const text1 = document.getElementById('text1').value;
             const context = document.getElementById('context').value;
 
+            // Strip whitespace from each line
+            const strippedText = stripLinesAndRejoin(text1);
+
             // Call ChatGPT API to get rewritten text
-            const rewrittenText = await callChatGPT(text1, context);
-            updateDiffView(text1, rewrittenText);
+            const rewrittenText = await callChatGPT(strippedText, context);
+            updateDiffView(strippedText, rewrittenText);
         }
 
         function copyAdditions() {
