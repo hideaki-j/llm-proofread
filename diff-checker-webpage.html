@@ -7,7 +7,6 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/diff_match_patch/20121119/diff_match_patch.js"></script>
     <script src="openai-api-key.js"></script>
     <script src="prompt.js"></script>
-    <script src="pairwise.js"></script>
     <style>
         /* Add this at the beginning of the style section */
         * {
@@ -505,12 +504,10 @@
                         const word = words[i];
                         if (wordHash.hasOwnProperty(word)) {
                             chars += String.fromCharCode(wordHash[word]);
-                            console.log('word', word, 'is already in wordHash', wordHash[word]);
                         } else {
                             chars += String.fromCharCode(wordArray.length);
                             wordHash[word] = wordArray.length;
                             wordArray.push(word);
-                            console.log('word', word, 'is added to wordHash', wordHash[word], 'with the index', wordArray.length);
                         }
                     }
                     return chars;
@@ -531,8 +528,6 @@
                 // Convert text to characters
                 const chars1 = diffWordsToCharsMunge_(text1);
                 const chars2 = diffWordsToCharsMunge_(text2);
-                console.log('chars1', chars1);
-                console.log('chars2', chars2);
 
                 const diffs = dmp.diff_main(chars1, chars2, false);
                 dmp.diff_cleanupSemantic(diffs);
@@ -540,7 +535,6 @@
                 // Convert characters back to words
                 diff_charsToWords_(diffs);
 
-                console.log(diffs);
                 return diffs;
             }
         }
@@ -809,7 +803,7 @@
                 if (type === -1 || type === 0) originalIndex += text.length;
                 if (type === 1 || type === 0) rewrittenIndex += text.length;
             }
-
+            console.log('diffInfo', diffInfo);
             return diffInfo;
         }
 
