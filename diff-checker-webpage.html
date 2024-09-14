@@ -456,15 +456,15 @@
             display: flex;
             flex-direction: column;
             justify-content: space-between;
-            min-height: 10px; /* Reduced from 100px */
+            min-height: 10px;
         }
 
         .diff-text {
-            margin-bottom: 5px; /* Reduced from 10px */
+            margin-bottom: 5px;
             padding: 5px;
             border-radius: 4px;
             word-break: break-word;
-            flex-grow: 1; /* Allow text to grow and push button down */
+            flex-grow: 1;
         }
 
         .diff-text.removed {
@@ -502,9 +502,17 @@
             transition: color 0.3s ease;
         }
 
-        .diff-hover {
+        .diff-hover, .diff-corresponding-hover {
             background-color: #fff2cc;
             cursor: pointer;
+        }
+
+        .removed, .added {
+            cursor: pointer;
+        }
+
+        .removed:hover, .added:hover {
+            text-decoration: underline;
         }
 
         /* Add this new style for the corresponding highlight */
@@ -615,23 +623,6 @@
             <div id="spaceOnlyCountdown">3</div>
             <div id="spaceOnlyProgressBar"></div>
             <button onclick="cancelSpaceOnlySelection()">Cancel</button>
-        </div>
-    </div>
-
-    <!-- Add this div for the diff popup -->
-    <div id="diffPopup" class="diff-popup">
-        <div id="diffPopupContent">
-            <span class="close-btn" onclick="closeDiffPopup()">&times;</span>
-            <div class="diff-comparison">
-                <div class="diff-column">
-                    <div id="diffOriginalText" class="diff-text removed"></div>
-                    <button id="keepOriginalBtn" class="diff-btn">Keep Original</button>
-                </div>
-                <div class="diff-column">
-                    <div id="diffRewrittenText" class="diff-text added"></div>
-                    <button id="acceptChangeBtn" class="diff-btn">Accept Change</button>
-                </div>
-            </div>
         </div>
     </div>
 
@@ -993,85 +984,25 @@
         function handleDiffClick(event) {
             const span = event.target;
             const diffIndex = parseInt(span.getAttribute('data-diff-index'));
+            const isOriginal = span.closest('#removals') !== null;
             
-            // Check if diffIndex is a valid number and within the bounds of globalDiffInfo
             if (!isNaN(diffIndex) && diffIndex >= 0 && diffIndex < globalDiffInfo.length) {
-                const diffInfo = globalDiffInfo[diffIndex];
-                showDiffPopup(event.clientX, event.clientY, diffInfo, diffIndex);
+                handleDiffSelection(isOriginal ? 'reject' : 'accept', diffIndex);
             } else {
                 console.error('Invalid diff index:', diffIndex);
-                // Optionally, show an error message to the user
                 alert('An error occurred while processing the diff. Please try again.');
             }
         }
 
-        // Function to show the diff popup
-        function showDiffPopup(x, y, diffInfo, diffIndex) {
-            const popup = document.getElementById('diffPopup');
-            popup.style.left = `${x+10}px`;
-            popup.style.top = `${y+10}px`;
-            popup.style.display = 'block';
-
-            // Check if diffInfo is defined and has the expected properties
-            if (diffInfo && typeof diffInfo === 'object') {
-                // Set the diff texts
-                document.getElementById('diffOriginalText').textContent = diffInfo.originalDiffString || '[No Text]';
-                document.getElementById('diffRewrittenText').textContent = diffInfo.rewrittenDiffString || '[No Text]';
-
-                // Store the diffIndex in the popup element
-                popup.setAttribute('data-diff-index', diffIndex);
-            } else {
-                // Handle the case where diffInfo is undefined or not as expected
-                document.getElementById('diffOriginalText').textContent = '[Error: No diff information available]';
-                document.getElementById('diffRewrittenText').textContent = '[Error: No diff information available]';
-                console.error('Invalid diffInfo object:', diffInfo);
-            }
-        }
-
-        // Hide the popup when clicking outside
-        document.addEventListener('click', function(event) {
-            const popup = document.getElementById('diffPopup');
-            if (popup.style.display === 'block' && !popup.contains(event.target) && !event.target.matches('.removed, .added')) {
-                popup.style.display = 'none';
-            }
-        });
-
-        // Event listeners for the popup buttons
-        document.getElementById('acceptChangeBtn').addEventListener('click', function() {
-            handleDiffSelection('accept');
-        });
-
-        document.getElementById('keepOriginalBtn').addEventListener('click', function() {
-            handleDiffSelection('reject');
-        });
-
-        // Close button functionality
-        document.querySelector('#diffPopup .close-btn').addEventListener('click', closeDiffPopup);
-
-        // Handle the diff selection
-        function handleDiffSelection(action) {
-            const popup = document.getElementById('diffPopup');
-            const diffIndex = parseInt(popup.getAttribute('data-diff-index'));
+        // Update the handleDiffSelection function
+        function handleDiffSelection(action, diffIndex) {
             const diffInfo = globalDiffInfo[diffIndex];
 
-            // Hide the popup
-            popup.style.display = 'none';
-
             if (action === 'accept') {
-                // Keep the rewritten version for this diff
-                console.log('originalPairwise', originalPairwise);
-                console.log('originalPairwise.substring(0, diffInfo.originalSpanStart)', originalPairwise.substring(0, diffInfo.originalSpanStart));
-                console.log('diffInfo.rewrittenDiffString', diffInfo.rewrittenDiffString);
-                console.log('originalPairwise.substring(diffInfo.originalSpanEnd)', originalPairwise.substring(diffInfo.originalSpanEnd));
                 originalPairwise = originalPairwise.substring(0, diffInfo.originalSpanStart) +
                     diffInfo.rewrittenDiffString +
                     originalPairwise.substring(diffInfo.originalSpanEnd);
             } else if (action === 'reject') {
-                // Keep the original version for this diff
-                console.log('rewrittenPairwise', rewrittenPairwise);
-                console.log('rewrittenPairwise.substring(0, diffInfo.rewrittenSpanStart)', rewrittenPairwise.substring(0, diffInfo.rewrittenSpanStart));
-                console.log('diffInfo.originalDiffString', diffInfo.originalDiffString);
-                console.log('rewrittenPairwise.substring(diffInfo.rewrittenSpanEnd)', rewrittenPairwise.substring(diffInfo.rewrittenSpanEnd));
                 rewrittenPairwise = rewrittenPairwise.substring(0, diffInfo.rewrittenSpanStart) +
                     diffInfo.originalDiffString +
                     rewrittenPairwise.substring(diffInfo.rewrittenSpanEnd);
@@ -1185,11 +1116,6 @@
                 // Set max-height to a large value to accommodate the content
                 optionsContainer.style.maxHeight = optionsContainer.scrollHeight + 'px';
             }
-        }
-
-        // Add this new function
-        function closeDiffPopup() {
-            document.getElementById('diffPopup').style.display = 'none';
         }
 
         // Update the event listeners
