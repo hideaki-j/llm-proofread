@@ -583,8 +583,9 @@
     <div class="container">
         <div class="column">
             <h2>Original Diff</h2>
-            <div id="removals" class="diff-box"></div>
+            <div id="removals" class="diff-box" contenteditable="true"></div>
             <div id="removalsWordCount" class="word-count"></div>
+            <button onclick="copyRemovals()" class="copy-button">📋</button>
         </div>
         <div class="column">
             <h2>Rewritten Diff</h2>
@@ -895,24 +896,27 @@
         function handleRewrittenEdit() {
             clearTimeout(editTimer);
             editTimer = setTimeout(() => {
+                const removalsElement = document.getElementById('removals');
                 const additionsElement = document.getElementById('additions');
+                const newOriginalText = removalsElement.innerText;
                 const newRewrittenText = additionsElement.innerText;
                 
-                // Save current cursor position
+                // Save current cursor position for both elements
                 const selection = window.getSelection();
                 const range = selection.getRangeAt(0);
+                const activeElement = range.startContainer.parentElement.closest('.diff-box');
                 const preCaretRange = range.cloneRange();
-                preCaretRange.selectNodeContents(additionsElement);
+                preCaretRange.selectNodeContents(activeElement);
                 preCaretRange.setEnd(range.endContainer, range.endOffset);
                 const caretOffset = preCaretRange.toString().length;
 
                 // Update diff view
-                updateDiffView(originalPairwise, newRewrittenText);
+                updateDiffView(newOriginalText, newRewrittenText);
 
                 // Restore cursor position
                 const newRange = document.createRange();
-                newRange.setStart(additionsElement, 0);
-                newRange.setEnd(additionsElement, 0);
+                newRange.setStart(activeElement, 0);
+                newRange.setEnd(activeElement, 0);
                 let charCount = 0;
                 let foundNode = false;
 
@@ -934,7 +938,7 @@
                     }
                 }
 
-                traverseNodes(additionsElement);
+                traverseNodes(activeElement);
 
                 selection.removeAllRanges();
                 selection.addRange(newRange);
@@ -1117,6 +1121,19 @@
             });
         }
 
+        function copyRemovals() {
+            const removalsText = document.getElementById('removals').innerText;
+            navigator.clipboard.writeText(removalsText).then(() => {
+                const alert = document.getElementById('copyAlert');
+                alert.style.display = 'block';
+                setTimeout(() => {
+                    alert.style.display = 'none';
+                }, 1000);
+            }).catch(err => {
+                console.error('Failed to copy text: ', err);
+            });
+        }
+
         function toggleApiKeyInput() {
             const apiKeyPopup = document.getElementById('apiKeyPopup');
             apiKeyPopup.style.display = (apiKeyPopup.style.display === 'none' || apiKeyPopup.style.display === '') ? 'block' : 'none';
@@ -1174,6 +1191,12 @@
         function closeDiffPopup() {
             document.getElementById('diffPopup').style.display = 'none';
         }
+
+        // Update the event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('removals').addEventListener('input', handleRewrittenEdit);
+            document.getElementById('additions').addEventListener('input', handleRewrittenEdit);
+        });
     </script>
 </body>
 </html>
