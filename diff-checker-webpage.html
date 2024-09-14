@@ -443,12 +443,42 @@
             padding: 10px;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
             z-index: 1000;
+            width: 400px;
         }
 
-        .diff-popup button {
-            display: inline-block;
-            margin-top: 10px;
-            margin-right: 10px;
+        .diff-comparison {
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .diff-column {
+            width: 48%;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            min-height: 10px; /* Reduced from 100px */
+        }
+
+        .diff-text {
+            margin-bottom: 5px; /* Reduced from 10px */
+            padding: 5px;
+            border-radius: 4px;
+            word-break: break-word;
+            flex-grow: 1; /* Allow text to grow and push button down */
+        }
+
+        .diff-text.removed {
+            background-color: #fce8e6;
+            color: #d93025;
+        }
+
+        .diff-text.added {
+            background-color: #e6f4ea;
+            color: #137333;
+        }
+
+        .diff-btn {
+            align-self: flex-end;
             padding: 5px 10px;
             background-color: #1a73e8;
             color: white;
@@ -457,7 +487,7 @@
             cursor: pointer;
         }
 
-        .diff-popup button:hover {
+        .diff-btn:hover {
             background-color: #174ea6;
         }
 
@@ -475,6 +505,11 @@
         .diff-hover {
             background-color: #fff2cc;
             cursor: pointer;
+        }
+
+        /* Add this new style for the corresponding highlight */
+        .diff-corresponding-hover {
+            background-color: #fff2cc;
         }
 
         /* Add these new styles */
@@ -586,10 +621,16 @@
     <div id="diffPopup" class="diff-popup">
         <div id="diffPopupContent">
             <span class="close-btn" onclick="closeDiffPopup()">&times;</span>
-            <div><strong>Original:</strong> <span id="diffOriginalText"></span></div>
-            <div><strong>Rewritten:</strong> <span id="diffRewrittenText"></span></div>
-            <button id="keepOriginalBtn">Keep Original</button>
-            <button id="acceptChangeBtn">Accept Change</button>
+            <div class="diff-comparison">
+                <div class="diff-column">
+                    <div id="diffOriginalText" class="diff-text removed"></div>
+                    <button id="keepOriginalBtn" class="diff-btn">Keep Original</button>
+                </div>
+                <div class="diff-column">
+                    <div id="diffRewrittenText" class="diff-text added"></div>
+                    <button id="acceptChangeBtn" class="diff-btn">Accept Change</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -851,12 +892,52 @@
             document.getElementById('additions').addEventListener('input', handleRewrittenEdit);
         }
 
-        // Add this new function to handle edits in the rewritten diff
         function handleRewrittenEdit() {
             clearTimeout(editTimer);
             editTimer = setTimeout(() => {
-                const newRewrittenText = document.getElementById('additions').innerText;
+                const additionsElement = document.getElementById('additions');
+                const newRewrittenText = additionsElement.innerText;
+                
+                // Save current cursor position
+                const selection = window.getSelection();
+                const range = selection.getRangeAt(0);
+                const preCaretRange = range.cloneRange();
+                preCaretRange.selectNodeContents(additionsElement);
+                preCaretRange.setEnd(range.endContainer, range.endOffset);
+                const caretOffset = preCaretRange.toString().length;
+
+                // Update diff view
                 updateDiffView(originalPairwise, newRewrittenText);
+
+                // Restore cursor position
+                const newRange = document.createRange();
+                newRange.setStart(additionsElement, 0);
+                newRange.setEnd(additionsElement, 0);
+                let charCount = 0;
+                let foundNode = false;
+
+                function traverseNodes(node) {
+                    if (foundNode) return;
+                    if (node.nodeType === Node.TEXT_NODE) {
+                        const nodeLength = node.length;
+                        if (charCount + nodeLength >= caretOffset) {
+                            newRange.setStart(node, caretOffset - charCount);
+                            newRange.setEnd(node, caretOffset - charCount);
+                            foundNode = true;
+                        } else {
+                            charCount += nodeLength;
+                        }
+                    } else {
+                        for (let i = 0; i < node.childNodes.length; i++) {
+                            traverseNodes(node.childNodes[i]);
+                        }
+                    }
+                }
+
+                traverseNodes(additionsElement);
+
+                selection.removeAllRanges();
+                selection.addRange(newRange);
             }, 3000);
         }
 
@@ -874,13 +955,34 @@
         // Handle hover event on diff spans
         function handleDiffHover(event) {
             const span = event.target;
+            const diffIndex = parseInt(span.getAttribute('data-diff-index'));
             span.classList.add('diff-hover');
+
+            // Find and highlight the corresponding span in the other box
+            const correspondingSpan = findCorrespondingSpan(span);
+            if (correspondingSpan) {
+                correspondingSpan.classList.add('diff-corresponding-hover');
+            }
+        }
+
+        // Add this new function to find the corresponding span
+        function findCorrespondingSpan(span) {
+            const diffIndex = span.getAttribute('data-diff-index');
+            const isOriginal = span.closest('#removals') !== null;
+            const targetId = isOriginal ? 'additions' : 'removals';
+            return document.querySelector(`#${targetId} [data-diff-index="${diffIndex}"]`);
         }
 
         // Handle mouse out event on diff spans
         function handleDiffMouseOut(event) {
             const span = event.target;
             span.classList.remove('diff-hover');
+
+            // Remove highlight from the corresponding span in the other box
+            const correspondingSpan = findCorrespondingSpan(span);
+            if (correspondingSpan) {
+                correspondingSpan.classList.remove('diff-corresponding-hover');
+            }
         }
 
         // Handle click event on diff spans
@@ -902,8 +1004,8 @@
         // Function to show the diff popup
         function showDiffPopup(x, y, diffInfo, diffIndex) {
             const popup = document.getElementById('diffPopup');
-            popup.style.left = `${x}px`;
-            popup.style.top = `${y}px`;
+            popup.style.left = `${x+10}px`;
+            popup.style.top = `${y+10}px`;
             popup.style.display = 'block';
 
             // Check if diffInfo is defined and has the expected properties
