@@ -530,11 +530,124 @@
             outline: none;
             border: 1px solid #1a73e8;
         }
+
+        .model-select {
+            background-color: #fff;
+            color: #1a73e8;
+            border: 1px solid #dadce0;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+            margin-left: 4px;
+            font-size: 14px;
+        }
+
+        .model-select:hover {
+            background-color: #f1f3f4;
+        }
+
+        .model-select:focus {
+            outline: none;
+            border-color: #1a73e8;
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+        }
+
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #1a73e8;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loading-text {
+            color: #202124;
+            font-size: 16px;
+            text-align: center;
+            margin: 0;
+        }
+
+        .model-name {
+            color: #1a73e8;
+            font-weight: 500;
+            margin-top: 8px;
+            display: block;
+        }
+
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loading-content {
+            background-color: #fff;
+            padding: 40px 30px 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            position: relative;
+            text-align: center;
+            min-width: 300px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .loading-content .close-btn {
+            position: absolute;
+            top: 10px;
+            right: 15px;
+            font-size: 24px;
+            font-weight: bold;
+            color: #5f6368;
+            cursor: pointer;
+            transition: color 0.3s ease;
+            line-height: 1;
+        }
+
+        .loading-content .close-btn:hover {
+            color: #1a73e8;
+        }
     </style>
 </head>
 <body>
     <h1>LLM Proofreader</h1>
     <button id="setApiKeyBtn" onclick="toggleApiKeyInput()">Set OpenAI API key</button>
+    <button id="toggleOptionsBtn" onclick="toggleOptions()">Show Options</button>
+    <select id="modelSelect" class="model-select">
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
+        <option value="gpt-4o">gpt-4o</option>
+        <option value="o1-mini">o1-mini</option>
+    </select>
     
     <!-- Add this new div for the API key popup -->
     <div id="apiKeyPopup">
@@ -545,9 +658,6 @@
             <button onclick="saveApiKey()">Save API Key</button>
         </div>
     </div>
-    
-    <!-- Add this new button -->
-    <button id="toggleOptionsBtn" onclick="toggleOptions()">Show Options</button>
     
     <!-- Wrap the Context, Notes, and Options sections in a new container -->
     <div id="optionsContainer">
@@ -623,6 +733,18 @@
             <div id="spaceOnlyCountdown">3</div>
             <div id="spaceOnlyProgressBar"></div>
             <button onclick="cancelSpaceOnlySelection()">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Replace the existing loading overlay HTML -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-content">
+            <span class="close-btn" onclick="hideLoadingOverlay()">&times;</span>
+            <div class="spinner"></div>
+            <div class="loading-text">
+                Generating response using<br>
+                <span class="model-name" id="loadingModelName"></span>
+            </div>
         </div>
     </div>
 
@@ -736,6 +858,7 @@
             const apiKeyInput = document.getElementById('apiKey');
             const apiKey = apiKeyInput.value.trim() || OPENAI_API_KEY;
             const notes = document.getElementById('notes').value;
+            const selectedModel = document.getElementById('modelSelect').value;
 
             const prompt = CHATGPT_PROMPT
                 .replace('{{notes}}', notes)
@@ -750,22 +873,24 @@
                         'Authorization': `Bearer ${apiKey}`
                     },
                     body: JSON.stringify({
-                        model: "gpt-4o-mini",
+                        model: selectedModel,
                         messages: [{ role: "user", content: prompt }],
-                        temperature: 0.6,
-                        max_tokens: 1000
+                        temperature: 1, // o1-mini only supports temperature 1
+                        max_completion_tokens: 1000
                     })
                 });
 
                 if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
+                    const errorData = await response.json().catch(() => null);
+                    const errorMessage = errorData?.error?.message || `HTTP error! status: ${response.status}`;
+                    throw new Error(errorMessage);
                 }
 
                 const data = await response.json();
                 return data.choices[0].message.content.trim();
             } catch (error) {
                 console.error("Error calling ChatGPT API:", error);
-                return "Error: Unable to generate rewritten text.";
+                throw error; // Re-throw the error to be handled by the caller
             }
         }
 
@@ -1019,24 +1144,37 @@
             return div.innerHTML;
         }
 
-        // Modify the callGPTandCompareDiff function to initialize the global variables
+        // Add this new function
+        function hideLoadingOverlay() {
+            document.getElementById('loadingOverlay').style.display = 'none';
+        }
+
+        // Update the callGPTandCompareDiff function
         async function callGPTandCompareDiff() {
             const text1 = document.getElementById('text1').value;
             const context = document.getElementById('context').value;
+            const selectedModel = document.getElementById('modelSelect').value;
+            
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            const loadingModelName = document.getElementById('loadingModelName');
+            loadingModelName.textContent = selectedModel;
+            loadingOverlay.style.display = 'flex';
 
-            // Strip whitespace from each line
-            const strippedText = stripLinesAndRejoin(text1);
+            try {
+                const strippedText = stripLinesAndRejoin(text1);
+                rawRewrittenText = await callChatGPT(strippedText, context);
+                const rewrittenText = stripLinesAndRejoin(rawRewrittenText);
 
-            // Call ChatGPT API to get rewritten text
-            rawRewrittenText = await callChatGPT(strippedText, context);
-            const rewrittenText = stripLinesAndRejoin(rawRewrittenText);
+                originalPairwise = strippedText;
+                rewrittenPairwise = rewrittenText;
 
-            // Initialize global variables
-            originalPairwise = strippedText;
-            rewrittenPairwise = rewrittenText;
-
-            // Update the diff view
-            updateDiffView(originalPairwise, rewrittenPairwise);
+                updateDiffView(originalPairwise, rewrittenPairwise);
+            } catch (error) {
+                console.error('Error:', error);
+                alert(`Error: ${error.message}`);
+            } finally {
+                hideLoadingOverlay();
+            }
         }
 
         function copyAdditions() {
