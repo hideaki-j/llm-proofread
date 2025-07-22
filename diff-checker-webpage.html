@@ -644,12 +644,12 @@
     <button id="setApiKeyBtn" onclick="toggleApiKeyInput()">Set OpenAI API key</button>
     <button id="toggleOptionsBtn" onclick="toggleOptions()">Show Options</button>
     <select id="modelSelect" class="model-select">
-        <option value="gpt-4o-mini">gpt-4o-mini</option>
         <option value="gpt-4o">gpt-4o</option>
-        <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+        <option value="gpt-4o-mini">gpt-4o-mini</option>
         <option value="gpt-4.1">gpt-4.1</option>
-        <option value="gpt-4.5-preview">gpt-4.5-preview</option>
-        <option value="o3-mini">o3-mini</option>
+        <option value="gpt-4.1-mini">gpt-4.1-mini</option>
+        <option value="o4-mini">o4-mini</option>
+        <option value="o3">o3</option>
     </select>
     
     <!-- Add this new div for the API key popup -->
@@ -878,7 +878,7 @@
                     body: JSON.stringify({
                         model: selectedModel,
                         messages: [{ role: "user", content: prompt }],
-                        temperature: 1, // o3-mini only supports temperature 1?
+                        temperature: 1, // o4-mini only supports temperature 1?
                         max_completion_tokens: 1000
                     })
                 });
